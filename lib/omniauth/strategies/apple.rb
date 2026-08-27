@@ -88,7 +88,7 @@ module OmniAuth
       end
 
       def cookies
-        request.env["action_dispatch.cookies"]
+        ActionDispatch::Request.new(request.env).cookie_jar
       end
 
       def id_info
