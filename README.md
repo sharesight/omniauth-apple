@@ -116,6 +116,30 @@ there are two options:
 * setting `nonce: :ignore` will completely skip `nonce` validation, however this isn't recommended as it opens CSRF 
   attack possibilities
 
+## State (CSRF) handling
+
+The same `SameSite` problem applies to the OAuth2 `state` parameter, which is OmniAuth's CSRF defence. With the default
+`state: :session`, the state stored at the start of the flow is unavailable on Apple's cross-site **POST** callback, so
+the check in `OmniAuth::Strategies::OAuth2#callback_phase` fails.
+
+Setting `state: :local` stores the state in a short-lived, encrypted, `HttpOnly` cookie with a `SameSite: :none` policy,
+so it survives the callback and the usual comparison against `params[:state]` can run unchanged:
+
+```ruby
+provider :apple, ENV['APPLE_SERVICE_BUNDLE_ID'], '', {
+  scope: 'email name',
+  team_id: ENV['APPLE_APP_ID_PREFIX'],
+  key_id: ENV['APPLE_KEY_ID'],
+  pem: ENV['APPLE_P8_FILE_CONTENT_WITH_EXTRA_NEWLINE'],
+  nonce: :local,
+  state: :local
+}
+```
+
+Do **not** reach for `provider_ignores_state: true` instead. It disables the CSRF check entirely, which lets an attacker
+replay their own valid Apple credential to the callback in a victim's browser and have it linked to the victim's
+account. `state: :local` exists so that option is never needed.
+
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/nhosoya/omniauth-apple.

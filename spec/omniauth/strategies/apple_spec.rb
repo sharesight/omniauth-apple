@@ -379,6 +379,105 @@ describe OmniAuth::Strategies::Apple do
     end
   end
 
+  describe '#callback_phase' do
+    let(:state_cookie) { OmniAuth::Strategies::Apple::STATE_COOKIE }
+
+    context 'with state in the session (default)' do
+      it 'does not write the state cookie' do
+        expect(subject).not_to receive(:store_state)
+        expect(subject.authorize_params['state']).to eq(subject.session['omniauth.state'])
+      end
+    end
+
+    context 'with state in the local store' do
+      let(:cookies) { ActionDispatch::Cookies::CookieJar.new(request) }
+      let(:state) { subject.authorize_params['state'] }
+
+      before do
+        subject.options.state = :local
+        allow(cookies).to receive(:encrypted).and_return(cookies)
+        allow(cookies).to receive(:handle_options)
+        request.env['action_dispatch.cookies'] = cookies
+        # Apple's cross-site form_post  creates a new sessions so it arrives without the session cookie.
+        # Therefore, the state must come back from the local store instead.
+        state
+        subject.session.delete('omniauth.state')
+      end
+
+      it 'stores the state in a short-lived, secure, SameSite=None cookie' do
+        expect(cookies).to receive(:[]=).with(
+          state_cookie,
+          hash_including(same_site: :none, secure: true, httponly: true, value: 'a-state')
+        )
+        subject.send(:store_state, 'a-state')
+      end
+
+      context 'when the request state matches the store' do
+        before { request.params['state'] = state }
+
+        it 'passes the CSRF check' do
+          expect(subject).not_to receive(:fail!)
+          # Stub the :build_access_token method with an error to create a hard stopping point
+          # of the :callback_phase method. This makes sure we don't continue into a real token exchange with Apple.
+          # We just want to test the CSRF check passes and that :build_access_token is called, but not ran.
+          expect(subject).to receive(:build_access_token).and_raise('reached token exchange')
+
+          expect { subject.callback_phase }.to raise_error('reached token exchange')
+        end
+
+        it 'consumes the stored state cookie, so it cannot be replayed' do
+          # Stub the :build_access_token method with an error to create a hard stopping point
+          # of the :callback_phase method. This makes sure we don't continue into a real token exchange with Apple.
+          # We just want to test the CSRF check passes and that :build_access_token is called, but not ran.
+          allow(subject).to receive(:build_access_token).and_raise('reached token exchange')
+
+          expect { subject.callback_phase }.to raise_error('reached token exchange')
+          expect(cookies.encrypted[state_cookie]).to be_nil
+        end
+      end
+
+      context 'when the request state differs from the store state' do
+        before { request.params['state'] = 'attacker-state' }
+
+        it 'fails with csrf_detected' do
+          expect(subject).not_to receive(:build_access_token)
+          expect(subject).to receive(:fail!).with(
+            :csrf_detected, kind_of(OmniAuth::Strategies::OAuth2::CallbackError)
+          )
+
+          subject.callback_phase
+        end
+      end
+
+      context 'when the request state is missing' do
+        it 'fails with csrf_detected' do
+          expect(subject).not_to receive(:build_access_token)
+          expect(subject).to receive(:fail!).with(
+            :csrf_detected, kind_of(OmniAuth::Strategies::OAuth2::CallbackError)
+          )
+
+          subject.callback_phase
+        end
+      end
+
+      context 'when the store is empty' do
+        before do
+          cookies.encrypted[state_cookie] = nil
+          request.params['state'] = state
+        end
+
+        it 'fails with csrf_detected' do
+          expect(subject).not_to receive(:build_access_token)
+          expect(subject).to receive(:fail!).with(
+            :csrf_detected, kind_of(OmniAuth::Strategies::OAuth2::CallbackError)
+          )
+
+          subject.callback_phase
+        end
+      end
+    end
+  end
+
   describe '#extra' do
     before(:each) do
       strategy.authorize_params # initializes session / populates 'nonce', 'state', etc

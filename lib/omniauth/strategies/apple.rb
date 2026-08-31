@@ -21,6 +21,13 @@ module OmniAuth
       option :authorized_client_ids, []
       # one of :session (default), :local, :ignore
       option :nonce, :session
+      # one of :session (default), :local
+      # :local keeps the CSRF state in a short-lived, encrypted, SameSite=None
+      # cookie so it survives Apple's cross-site form_post callback, where the
+      # main session cookie is not sent.
+      option :state, :session
+
+      STATE_COOKIE = :omniauth_apple_state
 
       uid { id_info[:sub] }
 
@@ -59,11 +66,23 @@ module OmniAuth
 
       def authorize_params
         params = super
-        options[:nonce] != :ignore ? params.merge(nonce: new_nonce) : params
+        params = params.merge(nonce: new_nonce) if options[:nonce] != :ignore
+        store_state(params[:state]) if options[:state] == :local
+        params
       end
 
       def callback_url
         options[:redirect_uri] || (full_host + callback_path)
+      end
+
+      # Apple posts the callback cross-site (response_mode=form_post), so the
+      # session cookie that upstream's CSRF check reads is not sent. When state
+      # is stored locally, reinstate it from our own cookie so that
+      # OmniAuth::Strategies::OAuth2#callback_phase can run its normal
+      # comparison against request.params['state'].
+      def callback_phase
+        session['omniauth.state'] = stored_state if options[:state] == :local
+        super
       end
 
       private
@@ -85,6 +104,17 @@ module OmniAuth
         nonce = cookies.encrypted[:omniauth_apple_store]
         cookies.delete :omniauth_apple_store
         nonce
+      end
+
+      def store_state(state)
+        cookies.encrypted[STATE_COOKIE] =
+          { same_site: :none, expires: 1.hour.from_now, secure: true, httponly: true, value: state }
+      end
+
+      def stored_state
+        state = cookies.encrypted[STATE_COOKIE]
+        cookies.delete STATE_COOKIE
+        state
       end
 
       def cookies
