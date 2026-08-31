@@ -91,7 +91,7 @@ module OmniAuth
         nonce = SecureRandom.urlsafe_base64(16)
         if options[:nonce] == :local
           cookies.encrypted[:omniauth_apple_store] =
-            { same_site: :none, expires: 1.hour.from_now, secure: true, value: nonce }
+            { same_site: :none, expires: 15.minutes.from_now, secure: true, value: nonce }
         else
           session['omniauth.nonce'] = nonce
         end
@@ -108,7 +108,7 @@ module OmniAuth
 
       def store_state(state)
         cookies.encrypted[STATE_COOKIE] =
-          { same_site: :none, expires: 1.hour.from_now, secure: true, httponly: true, value: state }
+          { same_site: :none, expires: 15.minutes.from_now, secure: true, httponly: true, value: state }
       end
 
       def stored_state

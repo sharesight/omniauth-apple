@@ -306,7 +306,7 @@ describe OmniAuth::Strategies::Apple do
       context 'when in store succeeds' do
         before do
           cookies.encrypted[:omniauth_apple_store] =
-            { same_site: :none, expires: 1.hour.from_now, secure: true, value: id_token_payload['nonce'] }
+            { same_site: :none, expires: 15.minutes.from_now, secure: true, value: id_token_payload['nonce'] }
         end
 
         it do
@@ -317,7 +317,7 @@ describe OmniAuth::Strategies::Apple do
       context 'when differs from store fails' do
         before do
           cookies.encrypted[:omniauth_apple_store] =
-            { same_site: :none, expires: 1.hour.from_now, secure: true, value: 'abd' }
+            { same_site: :none, expires: 15.minutes.from_now, secure: true, value: 'abd' }
         end
 
         it do
