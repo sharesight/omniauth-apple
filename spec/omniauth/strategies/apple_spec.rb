@@ -303,6 +303,17 @@ describe OmniAuth::Strategies::Apple do
         subject.session['omniauth.nonce'] = id_token_payload['nonce']
       end
 
+      # The nonce is written and verified entirely server-side, so no script has
+      # a reason to read the cookie. HttpOnly keeps an XSS from exfiltrating it.
+      it 'stores the nonce in a short-lived, secure, HttpOnly, SameSite=None cookie' do
+        expect(cookies).to receive(:[]=).with(
+          :omniauth_apple_store,
+          hash_including(same_site: :none, secure: true, httponly: true)
+        )
+
+        subject.send(:new_nonce)
+      end
+
       context 'when in store succeeds' do
         before do
           cookies.encrypted[:omniauth_apple_store] =

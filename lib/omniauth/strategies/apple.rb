@@ -90,8 +90,10 @@ module OmniAuth
       def new_nonce
         nonce = SecureRandom.urlsafe_base64(16)
         if options[:nonce] == :local
+          # HttpOnly: the nonce is written and verified entirely server-side, so
+          # no script has a reason to read it. Matches the state cookie.
           cookies.encrypted[:omniauth_apple_store] =
-            { same_site: :none, expires: 15.minutes.from_now, secure: true, value: nonce }
+            { same_site: :none, expires: 15.minutes.from_now, secure: true, httponly: true, value: nonce }
         else
           session['omniauth.nonce'] = nonce
         end
