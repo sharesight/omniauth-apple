@@ -478,6 +478,64 @@ describe OmniAuth::Strategies::Apple do
     end
   end
 
+  describe 'cookie_domain' do
+    let(:cookies) { ActionDispatch::Cookies::CookieJar.new(request) }
+    let(:state_cookie) { OmniAuth::Strategies::Apple::STATE_COOKIE }
+    let(:nonce_cookie) { :omniauth_apple_store }
+
+    before do
+      subject.options.nonce = :local
+      subject.options.state = :local
+      allow(cookies).to receive(:encrypted).and_return(cookies)
+      allow(cookies).to receive(:handle_options)
+      request.env['action_dispatch.cookies'] = cookies
+    end
+
+    context 'when unset (the default)' do
+      it 'writes host-only cookies' do
+        expect(cookies).to receive(:[]=).with(state_cookie, hash_excluding(:domain))
+        expect(cookies).to receive(:[]=).with(nonce_cookie, hash_excluding(:domain))
+
+        subject.authorize_params
+      end
+
+      it 'deletes them without a domain' do
+        expect(cookies).to receive(:delete).with(state_cookie, {})
+
+        subject.send(:stored_state)
+      end
+    end
+
+    context 'when set' do
+      before { subject.options.cookie_domain = :all }
+
+      # The request phase and the callback are not always served from the same
+      # host: OmniAuth.config.full_host can send Apple's callback to a different
+      # subdomain than the one the browser started on. A host-only cookie would
+      # not be sent there, and the CSRF check would fail with :csrf_detected.
+      it 'scopes both cookies to the domain so they survive a host change' do
+        expect(cookies).to receive(:[]=).with(state_cookie, hash_including(domain: :all))
+        expect(cookies).to receive(:[]=).with(nonce_cookie, hash_including(domain: :all))
+
+        subject.authorize_params
+      end
+
+      # A delete whose scope does not match the write leaves the original cookie
+      # in place, which would let it be replayed.
+      it 'deletes the state cookie with the same domain it was written with' do
+        expect(cookies).to receive(:delete).with(state_cookie, hash_including(domain: :all))
+
+        subject.send(:stored_state)
+      end
+
+      it 'deletes the nonce cookie with the same domain it was written with' do
+        expect(cookies).to receive(:delete).with(nonce_cookie, hash_including(domain: :all))
+
+        subject.send(:stored_nonce)
+      end
+    end
+  end
+
   describe '#extra' do
     before(:each) do
       strategy.authorize_params # initializes session / populates 'nonce', 'state', etc
