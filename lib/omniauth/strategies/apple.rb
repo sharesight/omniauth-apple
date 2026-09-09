@@ -26,6 +26,16 @@ module OmniAuth
       # cookie so it survives Apple's cross-site form_post callback, where the
       # main session cookie is not sent.
       option :state, :session
+      # Domain for the short-lived :local nonce/state cookies. Defaults to nil,
+      # which writes host-only cookies. Set it when the request phase and the
+      # callback are not served from the same host -- for example when the
+      # browser starts the flow on `charts.example.com` while
+      # `OmniAuth.config.full_host` sends Apple's callback to
+      # `portfolio.example.com`. A host-only cookie is not sent to a different
+      # host, so the state check would fail with :csrf_detected and the nonce
+      # check with :id_token_claims_invalid. Accepts anything ActionDispatch
+      # cookies accept, including Rails' `:all` for the registrable domain.
+      option :cookie_domain, nil
 
       STATE_COOKIE = :omniauth_apple_state
 
@@ -90,8 +100,7 @@ module OmniAuth
       def new_nonce
         nonce = SecureRandom.urlsafe_base64(16)
         if options[:nonce] == :local
-          cookies.encrypted[:omniauth_apple_store] =
-            { same_site: :none, expires: 15.minutes.from_now, secure: true, value: nonce }
+          cookies.encrypted[:omniauth_apple_store] = local_cookie(nonce)
         else
           session['omniauth.nonce'] = nonce
         end
@@ -102,19 +111,31 @@ module OmniAuth
         return session.delete("omniauth.nonce") unless options[:nonce] == :local
 
         nonce = cookies.encrypted[:omniauth_apple_store]
-        cookies.delete :omniauth_apple_store
+        cookies.delete(:omniauth_apple_store, local_cookie_scope)
         nonce
       end
 
       def store_state(state)
-        cookies.encrypted[STATE_COOKIE] =
-          { same_site: :none, expires: 15.minutes.from_now, secure: true, httponly: true, value: state }
+        cookies.encrypted[STATE_COOKIE] = local_cookie(state).merge(httponly: true)
       end
 
       def stored_state
         state = cookies.encrypted[STATE_COOKIE]
-        cookies.delete STATE_COOKIE
+        cookies.delete(STATE_COOKIE, local_cookie_scope)
         state
+      end
+
+      # Attributes for the short-lived :local nonce/state cookies. SameSite=None
+      # is what lets them ride along on Apple's cross-site form_post callback.
+      def local_cookie(value)
+        { same_site: :none, expires: 15.minutes.from_now, secure: true, value: value }
+          .merge(local_cookie_scope)
+      end
+
+      # Deleting a cookie only expires it if the scope matches the one it was
+      # written with, so both the write and the delete go through this.
+      def local_cookie_scope
+        options[:cookie_domain] ? { domain: options[:cookie_domain] } : {}
       end
 
       def cookies

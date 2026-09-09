@@ -140,6 +140,26 @@ Do **not** reach for `provider_ignores_state: true` instead. It disables the CSR
 replay their own valid Apple credential to the callback in a victim's browser and have it linked to the victim's
 account. `state: :local` exists so that option is never needed.
 
+### Cookie domain
+
+Both `:local` cookies are host-only by default. That is fine as long as the browser starts the flow on the same host
+that Apple posts the callback back to. If those differ — for example when `OmniAuth.config.full_host` sends the
+callback to `portfolio.example.com` while the user began on `charts.example.com` — the cookies are not sent, the state
+check fails with `:csrf_detected` and the nonce check with `:id_token_claims_invalid`. Set `cookie_domain` to widen
+their scope:
+
+```ruby
+provider :apple, ENV['APPLE_SERVICE_BUNDLE_ID'], '', {
+  # ...
+  nonce: :local,
+  state: :local,
+  cookie_domain: :all # or an explicit '.example.com'
+}
+```
+
+It accepts anything `ActionDispatch` cookies accept, including Rails' `:all` for the registrable domain. Note that a
+matching session cookie domain (`config.session_store ..., domain: :all`) is a good hint that you need this.
+
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/nhosoya/omniauth-apple.
